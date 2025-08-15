@@ -5,9 +5,11 @@ import argparse
 import yaml
 import os
 from pl_modules.citywalk_datamodule import CityWalkDataModule
+from pl_modules.citywalk_feat_datamodule import CityWalkFeatDataModule
 from pl_modules.teleop_datamodule import TeleopDataModule
 from pl_modules.citywalker_module import CityWalkerModule
 from pl_modules.citywalker_feat_module import CityWalkerFeatModule
+from pl_modules.stereo4d_datamodule import Stereo4DDataModule
 import torch
 import glob
 
@@ -75,8 +77,12 @@ def main():
     # Initialize the DataModule
     if cfg.data.type == 'citywalk':
         datamodule = CityWalkDataModule(cfg)
+    elif cfg.data.type == 'citywalk_feat':
+        datamodule = CityWalkFeatDataModule(cfg)
     elif cfg.data.type == 'teleop':
         datamodule = TeleopDataModule(cfg)
+    elif cfg.data.type == 'stereo4d':
+        datamodule = Stereo4DDataModule(cfg)
     else:
         raise ValueError(f"Invalid dataset: {cfg.data.dataset}")
 

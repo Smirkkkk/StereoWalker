@@ -1,10 +1,10 @@
 project:
   name: 'UrbanNav_Citywalk'
-  run_name: 'finetune'
+  run_name: 'ft-test'
   result_dir: 'results'
 
 training:
-  batch_size: 16
+  batch_size: 8
   max_epochs: 10
   gpus: 1
   amp: false
@@ -29,8 +29,8 @@ model:
   obs_encoder:
     type: 'dinov2_vitb14'
     context_size: 5
-    crop: [400, 400]
-    resize: [392, 392]
+    crop: [512, 512]
+    resize: [504, 504]
     freeze: true
   output_coordinate_repr: 'euclidean'
 
@@ -49,10 +49,13 @@ model:
     ff_dim_factor: 4
 
 data:
-  type: teleop
-  image_root_dir: 'dataset/teleop/obs'
-  pose_dir: 'dataset/teleop/pose_label'
-  num_workers: 15
+  type: stereo4d
+  video_dir: '/scratch/tsx4zn/data/stereo4d-lefteye-perspective'
+  pose_dir: '/project/uva_cv_lab/wtzhou/stereo4d-code/stereo4d'
+  train_list: '/project/uva_cv_lab/wtzhou/video-llm-annotation/debug.txt'
+  test_list: '/project/uva_cv_lab/wtzhou/video-llm-annotation/debug-test.txt'
+  num_workers: 4
+  # num_workers: 0
   pose_fps: 5
   video_fps: 30
   target_fps: 1
@@ -65,9 +68,9 @@ data:
   arrived_prob: 0.3
 
 validation:
-  num_visualize: 0
+  num_visualize: 100
 testing:
-  num_visualize: 0
+  num_visualize: 100
 
 logging:
   enable_wandb: false  # Set to false to disable Wandb logging

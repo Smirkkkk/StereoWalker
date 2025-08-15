@@ -158,6 +158,43 @@ class CityWalkerFeatModule(pl.LightningModule):
                 self.test_metrics['l1_loss'].append(l1_loss)
             self.test_metrics['arrived_accuracy'].append(accuracy)
             self.test_metrics['mean_angle'].append(mean_angle)
+        elif self.datatype == "stereo4d":
+            wp_pred, arrive_pred, _, _ = self(obs, cord, future_obs)
+            # Compute L1 loss for waypoints
+            waypoints_target = batch['waypoints']
+            waypoints_target *= batch['step_scale'].unsqueeze(-1).unsqueeze(-1)
+            l1_loss = F.mse_loss(wp_pred, waypoints_target, reduction='none') ** 0.5
+            
+            # Compute accuracy for "arrived" prediction
+            arrived_target = batch['arrived']
+            arrived_probs = torch.sigmoid(arrive_pred)
+            arrived_pred_binary = (arrived_probs >= 0.5).float().squeeze(-1)
+            correct = (arrived_pred_binary == arrived_target).float()
+            # accuracy = correct.sum().item() / correct.numel()
+
+            # wp_pred_last = wp_pred[:, -1, :]  # shape [batch_size, 2]
+            # waypoints_target_last = waypoints_target[:, -1, :]  # shape [batch_size, 2]
+
+            # Compute cosine similarity
+            wp_pred_view = wp_pred.view(-1, 2)
+            waypoints_target_view = waypoints_target.view(-1, 2)
+            # dot_product = (wp_pred_view * waypoints_target_view).sum(dim=1)  # shape [batch_size]
+            # norm_pred = wp_pred_view.norm(dim=1)  # shape [batch_size]
+            # norm_target = waypoints_target_view.norm(dim=1)  # shape [batch_size]
+            # cos_sim = dot_product / (norm_pred * norm_target + 1e-8)  # avoid division by zero
+            cos_sim = F.cosine_similarity(wp_pred_view, waypoints_target_view, dim=1)
+            
+            # Compute angle in degrees
+            angle = torch.acos(cos_sim) * 180 / torch.pi  # shape [batch_size]
+            angle = angle.view(B, T)
+            
+            # Take mean angle
+            for batch_idx in range(B):
+                # Store the metrics
+                if self.output_coordinate_repr == "euclidean":
+                    self.test_metrics['l1_loss'].append(l1_loss[batch_idx].max().item())
+                self.test_metrics['arrived_accuracy'].append(correct[batch_idx].item())
+                self.test_metrics['mean_angle'].append(angle[batch_idx].max().item())
         elif self.datatype == "teleop":
             category = batch['categories']
             wp_pred, arrive_pred, _, _ = self(obs, cord, future_obs)
@@ -216,7 +253,7 @@ class CityWalkerFeatModule(pl.LightningModule):
 
         
         # Handle visualization
-        if self.datatype == "citywalk":
+        if self.datatype == "citywalk" or self.datatype == "stereo4d":
             wp_pred *= batch['step_scale'].unsqueeze(-1).unsqueeze(-1)
         if self.output_coordinate_repr == "euclidean":
             self.process_visualization(
@@ -236,17 +273,27 @@ class CityWalkerFeatModule(pl.LightningModule):
             )
 
     def on_test_epoch_end(self):
-        if self.datatype == "citywalk":
+        if self.datatype == "citywalk" or self.datatype == "stereo4d":
+            import pandas as pd
+            self.test_metrics['count'] = len(self.test_metrics['l1_loss'])
             for metric in self.test_metrics:
-                metric_array = np.array(self.test_metrics[metric])
-                save_path = os.path.join(self.result_dir, f'test_{metric}.npy')
-                np.save(save_path, metric_array)
-                if not metric == "mean_angle":
-                    print(f"Test mean {metric} {metric_array.mean():.4f} saved to {save_path}")
-                else:
-                    mean_angle = metric_array.mean(axis=0)
-                    for i in range(len(mean_angle)):
-                        print(f"Test mean angle at step {i} {mean_angle[i]:.4f}")
+                if metric != 'count':
+                    self.test_metrics[metric] = np.nanmean(np.array(self.test_metrics[metric]))
+
+            # for metric in self.test_metrics:
+            #     metric_array = np.array(self.test_metrics[metric])
+            #     save_path = os.path.join(self.result_dir, f'test_{metric}.npy')
+            #     np.save(save_path, metric_array)
+            #     if not metric == "mean_angle":
+            #         print(f"Test mean {metric} {metric_array.mean():.4f} saved to {save_path}")
+            #     else:
+            #         mean_angle = metric_array.mean(axis=0)
+            #         for i in range(len(mean_angle)):
+            #             print(f"Test mean angle at step {i} {mean_angle[i]:.4f}")
+            df = pd.DataFrame([self.test_metrics])  
+            save_path = os.path.join(self.result_dir, 'test_metrics.csv')
+            df.to_csv(save_path, index=False)
+
         elif self.datatype == "teleop":
             import pandas as pd
             for category in self.test_catetories:
@@ -282,7 +329,7 @@ class CityWalkerFeatModule(pl.LightningModule):
 
     def on_test_epoch_start(self):
         self.vis_count = 0
-        if self.datatype == "citywalk":
+        if self.datatype == "citywalk" or self.datatype == "stereo4d":
             if self.output_coordinate_repr == "euclidean":
                 self.test_metrics = {'l1_loss': [], 'arrived_accuracy': [], 'mean_angle': []}
             elif self.output_coordinate_repr == "polar":
